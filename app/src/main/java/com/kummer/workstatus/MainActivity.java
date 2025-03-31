@@ -13,8 +13,12 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.preference.PreferenceManager;
+import org.apache.log4j.Logger;
 
 public class MainActivity extends AppCompatActivity {
+
+    private static final Logger logger = Log4jHelper.getLogger(MainActivity.class.getName());
+    private static boolean log4jConfigured = false;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -22,6 +26,13 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         EdgeToEdge.enable(this);
         setContentView(R.layout.main_activity);
+
+        // Configure Log4j only once
+        if (!log4jConfigured) {
+            Log4jHelper.configure(this);
+            log4jConfigured = true;
+        }
+        logger.info("App Started");
 
         Window window = getWindow();
 
@@ -33,17 +44,10 @@ public class MainActivity extends AppCompatActivity {
         windowInsetsController.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
         windowInsetsController.hide(WindowInsetsCompat.Type.systemBars());
 
-        // Do not force the app's orientation because then it won't auto-rotate,
-        // and I don't want to in-code force it to be only SCREEN_ORIENTATION_LANDSCAPE
-        // or SCREEN_ORIENTATION_REVERSE_PORTRAIT. Instead, I won't specify the
-        // orientation and I'll let Android auto-rotate.
-        // setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
-
         // Set up the webview
         WebView myWebView = findViewById(R.id.main_activity_webview);
         myWebView.getSettings().setJavaScriptEnabled(true);
     }
-
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -60,5 +64,8 @@ public class MainActivity extends AppCompatActivity {
             WebView myWebView = findViewById(R.id.main_activity_webview);
             myWebView.loadUrl(url);
         }
+
+        // Test the error logging
+        //throw new RuntimeException("This is a test crash!");
     }
 }
