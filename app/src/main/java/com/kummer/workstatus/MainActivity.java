@@ -7,6 +7,7 @@ import android.os.Bundle;
 import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.WebView;
+
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
@@ -14,7 +15,10 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.preference.PreferenceManager;
 
+import timber.log.Timber;
+
 public class MainActivity extends AppCompatActivity {
+    private LogToFile logger;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -22,6 +26,10 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         EdgeToEdge.enable(this);
         setContentView(R.layout.main_activity);
+
+        // Initialize logging
+        logger = new LogToFile(this);
+        Timber.plant(new FileLoggingTree(logger));
 
         Window window = getWindow();
 
@@ -32,12 +40,6 @@ public class MainActivity extends AppCompatActivity {
         WindowInsetsControllerCompat windowInsetsController = WindowCompat.getInsetsController(window, window.getDecorView());
         windowInsetsController.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
         windowInsetsController.hide(WindowInsetsCompat.Type.systemBars());
-
-        // Do not force the app's orientation because then it won't auto-rotate,
-        // and I don't want to in-code force it to be only SCREEN_ORIENTATION_LANDSCAPE
-        // or SCREEN_ORIENTATION_REVERSE_PORTRAIT. Instead, I won't specify the
-        // orientation and I'll let Android auto-rotate.
-        // setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
 
         // Set up the webview
         WebView myWebView = findViewById(R.id.main_activity_webview);
@@ -60,5 +62,12 @@ public class MainActivity extends AppCompatActivity {
             WebView myWebView = findViewById(R.id.main_activity_webview);
             myWebView.loadUrl(url);
         }
+
+        // Example usage of Timber
+        //Timber.i("MainActivity onStart() called");
+        //Timber.w("url is : %s", url);
+
+        // Test logging using this
+        //throw new RuntimeException("This is a test crash!");
     }
 }
