@@ -19,7 +19,7 @@ import de.mindpipe.android.logging.log4j.LogConfigurator;
 
 public class Log4jHelper implements UncaughtExceptionHandler {
 
-    private static final String CRASH_NOTIFICATION_URL = "http://192.168.1.200:8123/api/webhook/work-status-phone-crashed";
+    private static final String NOTIFICATION_URL = "http://192.168.1.200:8123/api/webhook/work-status-phone-crashed";
     private static final Logger logger = getLogger(Log4jHelper.class.getName());
     private UncaughtExceptionHandler defaultUEH;
     private static boolean isConfigured = false;
@@ -65,7 +65,7 @@ public class Log4jHelper implements UncaughtExceptionHandler {
         // Send the crash notification in a separate thread
         new Thread(() -> {
             try {
-                sendCrashNotification();
+                sendNotification("Notification sent successfully.");
             } catch (Exception e) {
                 logger.error("Error sending crash report", e);
             }
@@ -77,8 +77,8 @@ public class Log4jHelper implements UncaughtExceptionHandler {
         }
     }
 
-    private void sendCrashNotification() throws Exception {
-        URL url = new URL(CRASH_NOTIFICATION_URL);
+    public void sendNotification(String message) throws Exception {
+        URL url = new URL(NOTIFICATION_URL);
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 
         try {
@@ -88,9 +88,9 @@ public class Log4jHelper implements UncaughtExceptionHandler {
 
             int responseCode = connection.getResponseCode();
             if (responseCode >= 200 && responseCode < 300) {
-                logger.info("Crash notification sent successfully. Response code: " + responseCode);
+                logger.info(message + " Response code: " + responseCode);
             } else {
-                logger.error("Failed to send crash notification. Response code: " + responseCode);
+                logger.error("Failed to send notification. Response code: " + responseCode);
             }
         } finally {
             connection.disconnect();
