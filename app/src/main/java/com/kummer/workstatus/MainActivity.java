@@ -1,12 +1,27 @@
 package com.kummer.workstatus;
 
 import android.annotation.SuppressLint;
+import android.app.ActivityManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.net.http.SslError;
 import android.os.Bundle;
+import android.os.Debug;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Window;
 import android.view.WindowManager;
+import android.webkit.HttpAuthHandler;
+import android.webkit.SslErrorHandler;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
@@ -19,6 +34,16 @@ public class MainActivity extends AppCompatActivity {
 
     private static final Logger logger = Log4jHelper.getLogger(MainActivity.class.getName());
     private static boolean log4jConfigured = false;
+    private WebView myWebView;
+    private Handler memoryHandler = new Handler(Looper.getMainLooper());
+    private Runnable memoryRunnable = new Runnable() {
+        @Override
+        public void run() {
+            int logging_interval_minutes = 30;
+            logMemoryUsage();
+            memoryHandler.postDelayed(this, (long) logging_interval_minutes * 60 * 1000);
+        }
+    };
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -45,8 +70,64 @@ public class MainActivity extends AppCompatActivity {
         windowInsetsController.hide(WindowInsetsCompat.Type.systemBars());
 
         // Set up the webview
-        WebView myWebView = findViewById(R.id.main_activity_webview);
-        myWebView.getSettings().setJavaScriptEnabled(true);
+        myWebView = findViewById(R.id.main_activity_webview);
+        WebSettings webSettings = myWebView.getSettings();
+        webSettings.setJavaScriptEnabled(true);
+
+        startMemoryLogging();
+
+        // Set up the WebViewClient to handle errors
+        myWebView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                // Check if the error is ERR_CACHE_MISS
+                if (error.getErrorCode() == android.webkit.WebViewClient.ERROR_UNKNOWN) {
+                    String description = error.getDescription().toString();
+                    if (description.contains("net::ERR_CACHE_MISS")) {
+                        // This is the expected error, ignore it
+                        return;
+                    }
+                }
+                // Handle other errors (if needed)
+                super.onReceivedError(view, request, error);
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
+                // Ignore it for now
+                super.onReceivedHttpError(view, request, errorResponse);
+            }
+
+            @Override
+            public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                //ignore for now
+                super.onPageStarted(view, url, favicon);
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                //ignore for now
+                super.onPageFinished(view, url);
+            }
+
+            @Override
+            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+                //ignore for now
+                super.onReceivedSslError(view, handler, error);
+            }
+
+            @Override
+            public void onReceivedHttpAuthRequest(WebView view, HttpAuthHandler handler, String host, String realm) {
+                //ignore for now
+                super.onReceivedHttpAuthRequest(view, handler, host, realm);
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                //ignore for now
+                return super.shouldOverrideUrlLoading(view, request);
+            }
+        });
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -65,9 +146,21 @@ public class MainActivity extends AppCompatActivity {
         } else {
             logger.info("Loading URL: " + url); // Added logging here
             //This line was changed, as it was causing a crash when the url was empty
-            WebView myWebView = findViewById(R.id.main_activity_webview);
             myWebView.loadUrl(url);
         }
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        logger.info("onConfigurationChanged() called");
+        // No need to do anything else here since we are just handling the configuration change.
+        // The WebView will keep displaying the same content.
+
+        // Note that this isn't really necessary, but makes the app more stable when I rotate
+        // the screen during debugging. Also added
+        //    android:configChanges="orientation|screenSize">
+        // in AndroidManifest.xml
     }
 
     @Override
@@ -85,5 +178,47 @@ public class MainActivity extends AppCompatActivity {
                 logger.error("Error sending app finish notification", e);
             }
         }).start();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        logger.info("onDestroy() called, app is likely ending normally");
+
+        // Send the notification on a new thread. Network operations, like sending HTTP requests,
+        // must never be done on the main thread. Doing so could make the app unresponsive and crash.
+        new Thread(() -> {
+            try {
+                Log4jHelper log4jHelper = new Log4jHelper();
+                log4jHelper.sendNotification("App finished in onStop()");
+            } catch (Exception e) {
+                logger.error("Error sending app finish notification", e);
+            }
+        }).start();
+    }
+
+    private void startMemoryLogging() {
+        memoryHandler.post(memoryRunnable);
+    }
+
+    private void logMemoryUsage() {
+        ActivityManager activityManager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+        ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
+        activityManager.getMemoryInfo(memoryInfo);
+        long freeMemory = memoryInfo.availMem / 1048576L; // Convert to MB
+        long totalMemory = memoryInfo.totalMem / 1048576L;
+
+        Debug.MemoryInfo debugMemoryInfo = new Debug.MemoryInfo();
+        Debug.getMemoryInfo(debugMemoryInfo);
+        long totalPss = debugMemoryInfo.getTotalPss();
+        long privateDirty = debugMemoryInfo.getTotalPrivateDirty();
+        long heapSize = Runtime.getRuntime().totalMemory() / 1048576L;
+
+        logger.info("---------------------");
+        logger.info("Free Memory: " + freeMemory + " MB, " +
+                "Total Memory: " + totalMemory + " MB, " +
+                "Total PSS: " + totalPss + " KB, " +
+                "Private Dirty: " + privateDirty + " KB, " +
+                "Heap Size: " + heapSize + " MB");
     }
 }

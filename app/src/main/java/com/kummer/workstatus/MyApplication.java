@@ -1,6 +1,10 @@
 package com.kummer.workstatus;
 
 import android.app.Application;
+import android.content.Intent;
+
+import androidx.core.content.ContextCompat;
+
 import org.apache.log4j.Logger;
 
 public class MyApplication extends Application {
@@ -10,6 +14,9 @@ public class MyApplication extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        Log4jHelper.configure(this);
+        Intent serviceIntent = new Intent(this, LoggingService.class);
+        ContextCompat.startForegroundService(this, serviceIntent);
         logger.info("MyApplication onCreate() called");
     }
 
