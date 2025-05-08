@@ -23,6 +23,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import androidx.activity.EdgeToEdge;
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -35,12 +36,76 @@ public class MainActivity extends AppCompatActivity {
     private static final Logger logger = Log4jHelper.getLogger(MainActivity.class.getName());
     private static boolean log4jConfigured = false;
     private WebView myWebView;
-    private Handler memoryHandler = new Handler(Looper.getMainLooper());
-    private Runnable memoryRunnable = new Runnable() {
+    private final Handler memoryHandler = new Handler(Looper.getMainLooper());
+    private final Runnable memoryRunnable = new Runnable() {
+        @SuppressLint("SetJavaScriptEnabled")
         @Override
         public void run() {
-            int logging_interval_minutes = 30;
+            int logging_interval_minutes = 30; // Log memory every 30 minutes
+            int refresh_interval_hours = 4; // Refresh every 4 hours
+
             logMemoryUsage();
+
+            // Check if it's time to refresh the WebView
+            long currentTime = System.currentTimeMillis();
+            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+            long lastRefreshTime = prefs.getLong("last_refresh_time", 0);
+
+            // Check if 4 hours have passed since the last refresh
+            if (currentTime - lastRefreshTime >= (long) refresh_interval_hours * 60 * 60 * 1000) {
+                logger.info("---------------------");
+                logger.info("refreshWebView() called");
+                logMemoryUsage(); // Log memory before refresh
+                logger.info("refreshWebView() before removing the webview");
+                // Remove the old WebView from its parent
+                if (myWebView != null) {
+                    logger.info("refreshWebView() destroying the webview");
+                    myWebView.destroy();
+                    logger.info("refreshWebView() the webview has been destroyed");
+                    myWebView = null;
+                    logger.info("refreshWebView() the webview is null");
+                }
+
+                // Reconfigure webview
+                if (myWebView == null) {
+                    logger.info("refreshWebView() starting to reconfigure the webview");
+                    myWebView = findViewById(R.id.main_activity_webview);
+                    WebSettings webSettings = myWebView.getSettings();
+                    webSettings.setJavaScriptEnabled(true);
+                    webSettings.setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
+                    webSettings.setDomStorageEnabled(false);
+                    webSettings.setDatabaseEnabled(false);
+                    webSettings.setAllowFileAccess(false);
+                    webSettings.setAllowContentAccess(false);
+                    webSettings.setSupportMultipleWindows(false);
+                    webSettings.setJavaScriptCanOpenWindowsAutomatically(false);
+                    webSettings.setLoadsImagesAutomatically(true);
+                    webSettings.setNeedInitialFocus(false);
+                    logger.info("refreshWebView() reconfigure the webview finished");
+
+                    // Load the URL again
+                    logger.info("refreshWebView() getting the URL");
+                    String url = prefs.getString("work_status_url", "");
+                    logger.info("refreshWebView() the URL is: " + url);
+                    if (!url.isEmpty()) {
+                        logger.info("refreshWebView() loading the URL");
+                        myWebView.loadUrl(url);
+                        logger.info("refreshWebView() URL has been loaded");
+                    } else {
+                        logger.info("refreshWebView() url is empty, not loading url");
+                    }
+                }
+
+                logMemoryUsage(); // Log memory after refresh
+                logger.info("refreshWebView() ended");
+                logger.info("---------------------");
+
+                // Update the last refresh time
+                SharedPreferences.Editor editor = prefs.edit();
+                editor.putLong("last_refresh_time", currentTime);
+                editor.apply();
+            }
+
             memoryHandler.postDelayed(this, (long) logging_interval_minutes * 60 * 1000);
         }
     };
@@ -73,6 +138,17 @@ public class MainActivity extends AppCompatActivity {
         myWebView = findViewById(R.id.main_activity_webview);
         WebSettings webSettings = myWebView.getSettings();
         webSettings.setJavaScriptEnabled(true);
+
+        // TESTING- DOES THIS HELP MEMORY USAGE? WebView Settings (Memory Optimization)
+        webSettings.setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK); // Use cache, but fall back to network
+        webSettings.setDomStorageEnabled(false); // Disable DOM storage
+        webSettings.setDatabaseEnabled(false); // Disable database
+        webSettings.setAllowFileAccess(false); // Disable file access
+        webSettings.setAllowContentAccess(false); // Disable content access
+        webSettings.setSupportMultipleWindows(false); // Disable multiple windows
+        webSettings.setJavaScriptCanOpenWindowsAutomatically(false); // Disable js opening windows
+        webSettings.setLoadsImagesAutomatically(true); // Load images
+        webSettings.setNeedInitialFocus(false); // Disable need initial focus
 
         startMemoryLogging();
 
@@ -151,7 +227,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    public void onConfigurationChanged(Configuration newConfig) {
+    public void onConfigurationChanged(@NonNull Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         logger.info("onConfigurationChanged() called");
         // No need to do anything else here since we are just handling the configuration change.
@@ -212,13 +288,19 @@ public class MainActivity extends AppCompatActivity {
         Debug.getMemoryInfo(debugMemoryInfo);
         long totalPss = debugMemoryInfo.getTotalPss();
         long privateDirty = debugMemoryInfo.getTotalPrivateDirty();
-        long heapSize = Runtime.getRuntime().totalMemory() / 1048576L;
+
+        // New Memory Information
+        long totalAllocatedMemory = Runtime.getRuntime().totalMemory() / 1048576L; // Convert to MB
+        long totalFreeMemory = Runtime.getRuntime().freeMemory() / 1048576L; // Convert to MB
+        long maxHeapSize = Runtime.getRuntime().maxMemory() / 1048576L; // Convert to MB
 
         logger.info("---------------------");
         logger.info("Free Memory: " + freeMemory + " MB, " +
                 "Total Memory: " + totalMemory + " MB, " +
                 "Total PSS: " + totalPss + " KB, " +
                 "Private Dirty: " + privateDirty + " KB, " +
-                "Heap Size: " + heapSize + " MB");
+                "Total Allocated Memory: " + totalAllocatedMemory + " MB, " +
+                "Total Free Memory: " + totalFreeMemory + " MB, " +
+                "Max Heap Size: " + maxHeapSize + " MB");
     }
 }

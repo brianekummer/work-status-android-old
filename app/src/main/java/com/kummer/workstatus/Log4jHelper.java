@@ -26,7 +26,7 @@ public class Log4jHelper implements UncaughtExceptionHandler {
 
     private static final String CRASH_REPORT_URL = "http://192.168.1.200:8123/api/webhook/work-status-phone-crashed";
     private static final Logger logger = getLogger(Log4jHelper.class.getName());
-    private UncaughtExceptionHandler defaultUEH;
+    private final UncaughtExceptionHandler defaultUEH;
     private static boolean isConfigured = false;
     private static String deviceName = "";
     private static String versionName = "";
@@ -136,7 +136,7 @@ public class Log4jHelper implements UncaughtExceptionHandler {
     }
 
     private static String capitalize(String s) {
-        if (s == null || s.length() == 0) {
+        if (s == null || s.isEmpty()) {
             return "";
         }
         char first = s.charAt(0);
