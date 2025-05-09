@@ -2,6 +2,8 @@ package com.kummer.workstatus;
 
 import android.annotation.SuppressLint;
 import android.app.ActivityManager;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -31,11 +33,14 @@ import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.preference.PreferenceManager;
 import org.apache.log4j.Logger;
 
+import java.util.Calendar;
+
 public class MainActivity extends AppCompatActivity {
 
     private static final Logger logger = Log4jHelper.getLogger(MainActivity.class.getName());
     private static boolean log4jConfigured = false;
     private WebView myWebView;
+    private AlarmManager alarmManager;
     private final Handler memoryHandler = new Handler(Looper.getMainLooper());
     private final Runnable memoryRunnable = new Runnable() {
         @SuppressLint("SetJavaScriptEnabled")
@@ -114,6 +119,10 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        logger.info("---------------------");
+        logger.info("App is restarting: onCreate() called"); // Added logging here
+
         EdgeToEdge.enable(this);
         setContentView(R.layout.main_activity);
 
@@ -122,7 +131,6 @@ public class MainActivity extends AppCompatActivity {
             Log4jHelper.configure(this);
             log4jConfigured = true;
         }
-        logger.info("App Started");
 
         Window window = getWindow();
 
@@ -134,6 +142,15 @@ public class MainActivity extends AppCompatActivity {
         windowInsetsController.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
         windowInsetsController.hide(WindowInsetsCompat.Type.systemBars());
 
+        startMemoryLogging();
+
+        configureWebView();
+
+        scheduleAppRestart();
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private void configureWebView() {
         // Set up the webview
         myWebView = findViewById(R.id.main_activity_webview);
         WebSettings webSettings = myWebView.getSettings();
@@ -149,8 +166,6 @@ public class MainActivity extends AppCompatActivity {
         webSettings.setJavaScriptCanOpenWindowsAutomatically(false); // Disable js opening windows
         webSettings.setLoadsImagesAutomatically(true); // Load images
         webSettings.setNeedInitialFocus(false); // Disable need initial focus
-
-        startMemoryLogging();
 
         // Set up the WebViewClient to handle errors
         myWebView.setWebViewClient(new WebViewClient() {
@@ -204,6 +219,32 @@ public class MainActivity extends AppCompatActivity {
                 return super.shouldOverrideUrlLoading(view, request);
             }
         });
+    }
+
+    private void scheduleAppRestart() {
+        alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+        Intent intent = new Intent(this, AppRestartReceiver.class);
+        PendingIntent pendingIntent = PendingIntent.getBroadcast(
+                this,
+                0,
+                intent,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
+
+        // Restart every 6 hours (in milliseconds)
+        long sixHoursInMillis = 6 * 60 * 60 * 1000L;
+
+        // Set the alarm to repeat
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTimeInMillis(System.currentTimeMillis());
+        calendar.add(Calendar.MILLISECOND, (int) sixHoursInMillis);
+
+        alarmManager.setRepeating(
+                AlarmManager.RTC_WAKEUP,
+                calendar.getTimeInMillis(),
+                sixHoursInMillis,
+                pendingIntent
+        );
     }
 
     @SuppressLint("SetJavaScriptEnabled")
