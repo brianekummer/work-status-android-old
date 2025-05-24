@@ -12,9 +12,11 @@ import android.os.Bundle;
 import android.os.Debug;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.HttpAuthHandler;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -23,7 +25,6 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import androidx.activity.EdgeToEdge;
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -36,76 +37,13 @@ public class MainActivity extends AppCompatActivity {
     private static final Logger logger = Log4jHelper.getLogger(MainActivity.class.getName());
     private static boolean log4jConfigured = false;
     private WebView myWebView;
-    private final Handler memoryHandler = new Handler(Looper.getMainLooper());
-    private final Runnable memoryRunnable = new Runnable() {
-        @SuppressLint("SetJavaScriptEnabled")
+    private long appStartTimeMillis;
+    private Handler memoryHandler = new Handler(Looper.getMainLooper());
+    private Runnable memoryRunnable = new Runnable() {
         @Override
         public void run() {
-            int logging_interval_minutes = 30; // Log memory every 30 minutes
-            int refresh_interval_hours = 4; // Refresh every 4 hours
-
+            int logging_interval_minutes = 30;
             logMemoryUsage();
-
-            // Check if it's time to refresh the WebView
-            long currentTime = System.currentTimeMillis();
-            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
-            long lastRefreshTime = prefs.getLong("last_refresh_time", 0);
-
-            // Check if 4 hours have passed since the last refresh
-            if (currentTime - lastRefreshTime >= (long) refresh_interval_hours * 60 * 60 * 1000) {
-                logger.info("---------------------");
-                logger.info("refreshWebView() called");
-                logMemoryUsage(); // Log memory before refresh
-                logger.info("refreshWebView() before removing the webview");
-                // Remove the old WebView from its parent
-                if (myWebView != null) {
-                    logger.info("refreshWebView() destroying the webview");
-                    myWebView.destroy();
-                    logger.info("refreshWebView() the webview has been destroyed");
-                    myWebView = null;
-                    logger.info("refreshWebView() the webview is null");
-                }
-
-                // Reconfigure webview
-                if (myWebView == null) {
-                    logger.info("refreshWebView() starting to reconfigure the webview");
-                    myWebView = findViewById(R.id.main_activity_webview);
-                    WebSettings webSettings = myWebView.getSettings();
-                    webSettings.setJavaScriptEnabled(true);
-                    webSettings.setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
-                    webSettings.setDomStorageEnabled(false);
-                    webSettings.setDatabaseEnabled(false);
-                    webSettings.setAllowFileAccess(false);
-                    webSettings.setAllowContentAccess(false);
-                    webSettings.setSupportMultipleWindows(false);
-                    webSettings.setJavaScriptCanOpenWindowsAutomatically(false);
-                    webSettings.setLoadsImagesAutomatically(true);
-                    webSettings.setNeedInitialFocus(false);
-                    logger.info("refreshWebView() reconfigure the webview finished");
-
-                    // Load the URL again
-                    logger.info("refreshWebView() getting the URL");
-                    String url = prefs.getString("work_status_url", "");
-                    logger.info("refreshWebView() the URL is: " + url);
-                    if (!url.isEmpty()) {
-                        logger.info("refreshWebView() loading the URL");
-                        myWebView.loadUrl(url);
-                        logger.info("refreshWebView() URL has been loaded");
-                    } else {
-                        logger.info("refreshWebView() url is empty, not loading url");
-                    }
-                }
-
-                logMemoryUsage(); // Log memory after refresh
-                logger.info("refreshWebView() ended");
-                logger.info("---------------------");
-
-                // Update the last refresh time
-                SharedPreferences.Editor editor = prefs.edit();
-                editor.putLong("last_refresh_time", currentTime);
-                editor.apply();
-            }
-
             memoryHandler.postDelayed(this, (long) logging_interval_minutes * 60 * 1000);
         }
     };
@@ -114,6 +52,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        appStartTimeMillis = android.os.SystemClock.elapsedRealtime();
         EdgeToEdge.enable(this);
         setContentView(R.layout.main_activity);
 
@@ -139,21 +78,11 @@ public class MainActivity extends AppCompatActivity {
         WebSettings webSettings = myWebView.getSettings();
         webSettings.setJavaScriptEnabled(true);
 
-        // TESTING- DOES THIS HELP MEMORY USAGE? WebView Settings (Memory Optimization)
-        webSettings.setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK); // Use cache, but fall back to network
-        webSettings.setDomStorageEnabled(false); // Disable DOM storage
-        webSettings.setDatabaseEnabled(false); // Disable database
-        webSettings.setAllowFileAccess(false); // Disable file access
-        webSettings.setAllowContentAccess(false); // Disable content access
-        webSettings.setSupportMultipleWindows(false); // Disable multiple windows
-        webSettings.setJavaScriptCanOpenWindowsAutomatically(false); // Disable js opening windows
-        webSettings.setLoadsImagesAutomatically(true); // Load images
-        webSettings.setNeedInitialFocus(false); // Disable need initial focus
-
         startMemoryLogging();
 
         // Set up the WebViewClient to handle errors
         myWebView.setWebViewClient(new WebViewClient() {
+
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 // Check if the error is ERR_CACHE_MISS
@@ -203,7 +132,87 @@ public class MainActivity extends AppCompatActivity {
                 //ignore for now
                 return super.shouldOverrideUrlLoading(view, request);
             }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                logger.error("WebView render process gone on " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL +
+                        ". App Uptime: " + getAppUptime() + // Add a helper to get app uptime for context
+                        ". Crashed: " + detail.didCrash() +
+                        ", Renderer Priority: " + detail.rendererPriorityAtExit());
+
+                if (view != null) {
+                    logger.info("Attempting to fully destroy and recreate WebView after render process gone.");
+                    final ViewGroup parent = (ViewGroup) view.getParent();
+                    if (parent != null) {
+                        parent.removeView(view);
+                    }
+                    view.destroy();
+                    myWebView = null; // Ensure old instance is cleared
+
+                    // Re-inflate or create a new WebView instance and add it back
+                    // This depends on how your layout is structured.
+                    // If it's defined in XML:
+                    // getLayoutInflater().inflate(R.layout.your_webview_container, parent, true);
+                    // myWebView = parent.findViewById(R.id.main_activity_webview);
+                    // Or if you create it programmatically:
+                    myWebView = new WebView(MainActivity.this);
+                    parent.addView(myWebView, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+                    // Ensure you re-apply all settings, WebViewClient, WebChromeClient, and load the URL
+                    // It's best to encapsulate this in a method.
+                    setupAndLoadWebView();
+
+                    logger.info("WebView re-initialization process initiated.");
+                } else {
+                    logger.error("WebView instance was null in onRenderProcessGone. Cannot recover automatically. App may become unstable.");
+                    // Consider more drastic recovery or user notification if this path is hit.
+                }
+                return true; // Crucial: Return true to indicate you've handled it.
+            }
         });
+    }
+
+    // Helper method in your Activity
+    private void setupAndLoadWebView() {
+        // If myWebView is not null, ensure it's the correct new instance
+        if (myWebView == null) { // Or re-find it if inflated from XML
+            myWebView = findViewById(R.id.main_activity_webview); // Or however you get your WebView instance
+            if (myWebView == null) {
+                logger.fatal("Failed to re-initialize WebView (findViewById failed). App will likely fail.");
+                // Potentially finish activity or show critical error
+                return;
+            }
+        }
+
+        WebSettings webSettings = myWebView.getSettings();
+        webSettings.setJavaScriptEnabled(true);
+        // Apply any other settings you need (cache mode, DOM storage, etc.)
+        // webSettings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        // webSettings.setDomStorageEnabled(true);
+
+
+        myWebView.setWebViewClient(new WebViewClient()); // Ensure this is the same class that has onRenderProcessGone
+        // myWebView.setWebChromeClient(new YourCustomWebChromeClient()); // If you use one
+
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+        String url = prefs.getString("work_status_url", "");
+        if (!url.isEmpty()) {
+            logger.info("Reloading URL in newly initialized WebView: " + url);
+            myWebView.loadUrl(url);
+        } else {
+            logger.warn("URL is empty after WebView re-initialization. Navigating to settings.");
+            Intent i = new Intent(MainActivity.this, SettingsActivity.class);
+            startActivity(i);
+            // Potentially finish this activity if it can't operate without a URL
+        }
+    }
+
+    // Example helper for uptime
+    private String getAppUptime() {
+        long currentElapsedTimeMillis = android.os.SystemClock.elapsedRealtime();
+        long uptimeMillis = currentElapsedTimeMillis - appStartTimeMillis;
+        long uptimeMinutes = java.util.concurrent.TimeUnit.MILLISECONDS.toMinutes(uptimeMillis);
+        return uptimeMinutes + " minutes";
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -227,7 +236,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    public void onConfigurationChanged(@NonNull Configuration newConfig) {
+    public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         logger.info("onConfigurationChanged() called");
         // No need to do anything else here since we are just handling the configuration change.
@@ -288,19 +297,13 @@ public class MainActivity extends AppCompatActivity {
         Debug.getMemoryInfo(debugMemoryInfo);
         long totalPss = debugMemoryInfo.getTotalPss();
         long privateDirty = debugMemoryInfo.getTotalPrivateDirty();
-
-        // New Memory Information
-        long totalAllocatedMemory = Runtime.getRuntime().totalMemory() / 1048576L; // Convert to MB
-        long totalFreeMemory = Runtime.getRuntime().freeMemory() / 1048576L; // Convert to MB
-        long maxHeapSize = Runtime.getRuntime().maxMemory() / 1048576L; // Convert to MB
+        long heapSize = Runtime.getRuntime().totalMemory() / 1048576L;
 
         logger.info("---------------------");
         logger.info("Free Memory: " + freeMemory + " MB, " +
                 "Total Memory: " + totalMemory + " MB, " +
                 "Total PSS: " + totalPss + " KB, " +
                 "Private Dirty: " + privateDirty + " KB, " +
-                "Total Allocated Memory: " + totalAllocatedMemory + " MB, " +
-                "Total Free Memory: " + totalFreeMemory + " MB, " +
-                "Max Heap Size: " + maxHeapSize + " MB");
+                "Heap Size: " + heapSize + " MB");
     }
 }

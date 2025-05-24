@@ -10,8 +10,8 @@ android {
         applicationId = "com.kummer.workstatus"
         minSdk = 29
         targetSdk = 34
-        versionCode = 20
-        versionName = "1.20"
+        versionCode = 15
+        versionName = "1.15"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
