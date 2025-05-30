@@ -25,6 +25,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import androidx.activity.EdgeToEdge;
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -37,9 +38,8 @@ public class MainActivity extends AppCompatActivity {
     private static final Logger logger = Log4jHelper.getLogger(MainActivity.class.getName());
     private static boolean log4jConfigured = false;
     private WebView myWebView;
-    private long appStartTimeMillis;
-    private Handler memoryHandler = new Handler(Looper.getMainLooper());
-    private Runnable memoryRunnable = new Runnable() {
+    private final Handler memoryHandler = new Handler(Looper.getMainLooper());
+    private final Runnable memoryRunnable = new Runnable() {
         @Override
         public void run() {
             int logging_interval_minutes = 30;
@@ -52,11 +52,9 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        appStartTimeMillis = android.os.SystemClock.elapsedRealtime();
         EdgeToEdge.enable(this);
         setContentView(R.layout.main_activity);
 
-        // Configure Log4j only once
         if (!log4jConfigured) {
             Log4jHelper.configure(this);
             log4jConfigured = true;
@@ -73,25 +71,40 @@ public class MainActivity extends AppCompatActivity {
         windowInsetsController.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
         windowInsetsController.hide(WindowInsetsCompat.Type.systemBars());
 
+        // Start logging memory usage
+        memoryHandler.post(memoryRunnable);
+
         // Set up the webview
-        myWebView = findViewById(R.id.main_activity_webview);
+        setupAndLoadWebView();
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private void setupAndLoadWebView() {
+        if (myWebView == null) {
+            myWebView = findViewById(R.id.main_activity_webview);
+            if (myWebView == null) {
+                logger.fatal("Failed to re-initialize WebView (findViewById failed). App will likely fail.");
+                return;
+            }
+        }
+
         WebSettings webSettings = myWebView.getSettings();
         webSettings.setJavaScriptEnabled(true);
-
-        startMemoryLogging();
-
-        // Set up the WebViewClient to handle errors
         myWebView.setWebViewClient(new WebViewClient() {
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                // Check if the error is ERR_CACHE_MISS
+                // Check if the error is ERR_CACHE_MISS, in which case the browser/webview failed
+                // to retrieve cache. This is expected since caching is not used for this site,
+                // so do nothing.
                 if (error.getErrorCode() == android.webkit.WebViewClient.ERROR_UNKNOWN) {
                     String description = error.getDescription().toString();
                     if (description.contains("net::ERR_CACHE_MISS")) {
-                        // This is the expected error, ignore it
                         return;
                     }
+                }
+                else if (request.isForMainFrame()) {
+                    logger.error("WebView error on main frame: " + error.getErrorCode() + " " + error.getDescription());
                 }
                 // Handle other errors (if needed)
                 super.onReceivedError(view, request, error);
@@ -105,14 +118,14 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
-                //ignore for now
                 super.onPageStarted(view, url, favicon);
+                logger.info("WebView page started: " + url);
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
-                //ignore for now
                 super.onPageFinished(view, url);
+                logger.info("WebView page finished: " + url);
             }
 
             @Override
@@ -136,7 +149,6 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
                 logger.error("WebView render process gone on " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL +
-                        ". App Uptime: " + getAppUptime() + // Add a helper to get app uptime for context
                         ". Crashed: " + detail.didCrash() +
                         ", Renderer Priority: " + detail.rendererPriorityAtExit());
 
@@ -149,17 +161,33 @@ public class MainActivity extends AppCompatActivity {
                     view.destroy();
                     myWebView = null; // Ensure old instance is cleared
 
-                    // Re-inflate or create a new WebView instance and add it back
-                    // This depends on how your layout is structured.
-                    // If it's defined in XML:
-                    // getLayoutInflater().inflate(R.layout.your_webview_container, parent, true);
-                    // myWebView = parent.findViewById(R.id.main_activity_webview);
-                    // Or if you create it programmatically:
+                    // Create a new WebView instance and add it back
                     myWebView = new WebView(MainActivity.this);
-                    parent.addView(myWebView, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                    parent.addView(myWebView, new ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT));
 
-                    // Ensure you re-apply all settings, WebViewClient, WebChromeClient, and load the URL
-                    // It's best to encapsulate this in a method.
+                    // Add it back to the parent (assuming the parent is a FrameLayout or similar)
+                    // If your original WebView was directly in the XML layout, you might need
+                    // a container FrameLayout to add the new WebView into.
+                    // For simplicity, if 'main_activity_webview_container' is a FrameLayout in your XML:
+                    // FrameLayout container = findViewById(R.id.main_activity_webview_container);
+                    // container.addView(myWebView);
+                    // If the original WebView was the root or you're replacing it directly
+                    // and its parent can take a new child this way:
+                    if (parent != null) {
+                        parent.addView(myWebView);
+                    } else {
+                        // Fallback: If parent is null, re-set content view, then re-find a container
+                        // This is less ideal. Better to have a dedicated container.
+                        setContentView(R.layout.main_activity); // Re-inflate
+                        // Re-initialize myWebView if it was part of the layout
+                        // myWebView = findViewById(R.id.main_activity_webview);
+                        // This path needs careful handling depending on your layout structure.
+                        logger.error("WebView parent was null, complex recovery needed.");
+                        return false; // Indicate recovery might not be complete
+                    }
+
                     setupAndLoadWebView();
 
                     logger.info("WebView re-initialization process initiated.");
@@ -170,120 +198,72 @@ public class MainActivity extends AppCompatActivity {
                 return true; // Crucial: Return true to indicate you've handled it.
             }
         });
-    }
-
-    // Helper method in your Activity
-    private void setupAndLoadWebView() {
-        // If myWebView is not null, ensure it's the correct new instance
-        if (myWebView == null) { // Or re-find it if inflated from XML
-            myWebView = findViewById(R.id.main_activity_webview); // Or however you get your WebView instance
-            if (myWebView == null) {
-                logger.fatal("Failed to re-initialize WebView (findViewById failed). App will likely fail.");
-                // Potentially finish activity or show critical error
-                return;
-            }
-        }
-
-        WebSettings webSettings = myWebView.getSettings();
-        webSettings.setJavaScriptEnabled(true);
-        // Apply any other settings you need (cache mode, DOM storage, etc.)
-        // webSettings.setCacheMode(WebSettings.LOAD_NO_CACHE);
-        // webSettings.setDomStorageEnabled(true);
-
-
-        myWebView.setWebViewClient(new WebViewClient()); // Ensure this is the same class that has onRenderProcessGone
-        // myWebView.setWebChromeClient(new YourCustomWebChromeClient()); // If you use one
 
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
         String url = prefs.getString("work_status_url", "");
         if (!url.isEmpty()) {
-            logger.info("Reloading URL in newly initialized WebView: " + url);
+            logger.info("Loading URL in WebView: " + url);
             myWebView.loadUrl(url);
         } else {
-            logger.warn("URL is empty after WebView re-initialization. Navigating to settings.");
+            logger.info("URL is empty after WebView initialization/re-initialization. Navigating to settings.");
             Intent i = new Intent(MainActivity.this, SettingsActivity.class);
             startActivity(i);
-            // Potentially finish this activity if it can't operate without a URL
         }
     }
 
-    // Example helper for uptime
-    private String getAppUptime() {
-        long currentElapsedTimeMillis = android.os.SystemClock.elapsedRealtime();
-        long uptimeMillis = currentElapsedTimeMillis - appStartTimeMillis;
-        long uptimeMinutes = java.util.concurrent.TimeUnit.MILLISECONDS.toMinutes(uptimeMillis);
-        return uptimeMinutes + " minutes";
-    }
-
-    @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onStart() {
         super.onStart();
-        logger.info("onStart() called"); // Added logging here
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
-        String url = prefs.getString("work_status_url", "");
-        if (url.isEmpty()) {
-            logger.info("work_status_url is empty. Navigating to SettingsActivity"); // Added logging here
-
-            // If do not have the URL, navigate to settings activity so user can set it
-            Intent i = new Intent(MainActivity.this, SettingsActivity.class);
-            startActivity(i);
-        } else {
-            logger.info("Loading URL: " + url); // Added logging here
-            //This line was changed, as it was causing a crash when the url was empty
-            myWebView.loadUrl(url);
-        }
+        logger.info("onStart() called");
     }
 
     @Override
-    public void onConfigurationChanged(Configuration newConfig) {
+    public void onConfigurationChanged(@NonNull Configuration newConfig) {
+        // This isn't really necessary, but makes the app more stable when I rotate
+        // the screen when mounting/unmounting the phone on the wall. There is no
+        // need to do anything else here since we are just handling the configuration
+        // change- the WebView will keep displaying the same content.
         super.onConfigurationChanged(newConfig);
         logger.info("onConfigurationChanged() called");
-        // No need to do anything else here since we are just handling the configuration change.
-        // The WebView will keep displaying the same content.
-
-        // Note that this isn't really necessary, but makes the app more stable when I rotate
-        // the screen during debugging. Also added
-        //    android:configChanges="orientation|screenSize">
-        // in AndroidManifest.xml
     }
 
     @Override
     protected void onDestroy() {
-        super.onDestroy();
         logger.info("onDestroy() called, app is likely ending normally");
+        sendNotification("App finished in onDestroy()", "Error sending app finish notification");
 
-        // Send the notification on a new thread. Network operations, like sending HTTP requests,
-        // must never be done on the main thread. Doing so could make the app unresponsive and crash.
-        new Thread(() -> {
-            try {
-                Log4jHelper log4jHelper = new Log4jHelper();
-                log4jHelper.sendNotification("App finished in onDestroy()");
-            } catch (Exception e) {
-                logger.error("Error sending app finish notification", e);
+        // It's good practice to destroy the WebView to release resources
+        if (myWebView != null) {
+            // Remove it from the view hierarchy first
+            ViewGroup parent = (ViewGroup) myWebView.getParent();
+            if (parent != null) {
+                parent.removeView(myWebView);
             }
-        }).start();
+            myWebView.removeAllViews(); // Clear all child views
+            myWebView.destroy();        // Destroy the WebView itself
+            myWebView = null;           // Nullify the reference
+        }
+        super.onDestroy();
     }
 
     @Override
     protected void onStop() {
         super.onStop();
         logger.info("onDestroy() called, app is likely ending normally");
+        sendNotification("App finished in onStop()", "Error sending app finish notification");
+    }
 
+    private void sendNotification(String notificationMessage, String logMessage) {
         // Send the notification on a new thread. Network operations, like sending HTTP requests,
         // must never be done on the main thread. Doing so could make the app unresponsive and crash.
         new Thread(() -> {
             try {
                 Log4jHelper log4jHelper = new Log4jHelper();
-                log4jHelper.sendNotification("App finished in onStop()");
+                log4jHelper.sendNotification(notificationMessage);
             } catch (Exception e) {
-                logger.error("Error sending app finish notification", e);
+                logger.error(logMessage, e);
             }
         }).start();
-    }
-
-    private void startMemoryLogging() {
-        memoryHandler.post(memoryRunnable);
     }
 
     private void logMemoryUsage() {
