@@ -91,7 +91,6 @@ public class MainActivity extends AppCompatActivity {
         WebSettings webSettings = myWebView.getSettings();
         webSettings.setJavaScriptEnabled(true);
         myWebView.setWebViewClient(new WebViewClient() {
-
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 // Check if the error is ERR_CACHE_MISS, in which case the browser/webview failed
@@ -110,6 +109,7 @@ public class MainActivity extends AppCompatActivity {
                 super.onReceivedError(view, request, error);
             }
 
+            // TODO- Remove a bunch of these overridesIs Android even upgrading the webview
             @Override
             public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
                 // Ignore it for now
@@ -148,18 +148,21 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                // TODO- HAVE GEMINI ADD DOCUMENTATION AND EXPLAIN THIS TO ME
                 logger.error("WebView render process gone on " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL +
                         ". Crashed: " + detail.didCrash() +
                         ", Renderer Priority: " + detail.rendererPriorityAtExit());
 
                 if (view != null) {
                     logger.info("Attempting to fully destroy and recreate WebView after render process gone.");
+                    //***** START TODO- EXTRACT INTO FN *****//
                     final ViewGroup parent = (ViewGroup) view.getParent();
                     if (parent != null) {
                         parent.removeView(view);
                     }
                     view.destroy();
                     myWebView = null; // Ensure old instance is cleared
+                    //***** END EXTRACT *****//
 
                     // Create a new WebView instance and add it back
                     myWebView = new WebView(MainActivity.this);
@@ -234,14 +237,16 @@ public class MainActivity extends AppCompatActivity {
 
         // It's good practice to destroy the WebView to release resources
         if (myWebView != null) {
+            //***** TODO- EXTRACT TOTO A FN *****//
             // Remove it from the view hierarchy first
             ViewGroup parent = (ViewGroup) myWebView.getParent();
             if (parent != null) {
                 parent.removeView(myWebView);
             }
-            myWebView.removeAllViews(); // Clear all child views
+            myWebView.removeAllViews(); // Clear all child views     << THIS IS IMPORTANT, NEED THIS
             myWebView.destroy();        // Destroy the WebView itself
             myWebView = null;           // Nullify the reference
+            //***** END OF EXTRACT *****//
         }
         super.onDestroy();
     }
@@ -279,11 +284,10 @@ public class MainActivity extends AppCompatActivity {
         long privateDirty = debugMemoryInfo.getTotalPrivateDirty();
         long heapSize = Runtime.getRuntime().totalMemory() / 1048576L;
 
-        logger.info("---------------------");
         logger.info("Free Memory: " + freeMemory + " MB, " +
-                "Total Memory: " + totalMemory + " MB, " +
-                "Total PSS: " + totalPss + " KB, " +
-                "Private Dirty: " + privateDirty + " KB, " +
-                "Heap Size: " + heapSize + " MB");
+            "Total Memory: " + totalMemory + " MB, " +
+            "Total PSS: " + totalPss + " KB, " +
+            "Private Dirty: " + privateDirty + " KB, " +
+            "Heap Size: " + heapSize + " MB");
     }
 }

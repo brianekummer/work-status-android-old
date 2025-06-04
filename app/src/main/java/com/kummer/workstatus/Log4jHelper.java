@@ -24,10 +24,12 @@ import org.apache.log4j.FileAppender;
 
 public class Log4jHelper implements UncaughtExceptionHandler {
 
+    // TODO- Do I keep the notification? Probably not
     private static final String CRASH_REPORT_URL = "http://192.168.1.200:8123/api/webhook/work-status-phone-crashed";
     private static final Logger logger = getLogger(Log4jHelper.class.getName());
     private UncaughtExceptionHandler defaultUEH;
     private static boolean isConfigured = false;
+
     private static String deviceName = "";
     private static String versionName = "";
 
@@ -49,8 +51,8 @@ public class Log4jHelper implements UncaughtExceptionHandler {
                 logConfigurator.setLevel("org.apache", Level.ALL);
                 logConfigurator.setUseFileAppender(true);
                 logConfigurator.setFilePattern("%d{yyyy-MM-dd HH:mm:ss} [%t] %-5p %c{1} - %m%n");
-                logConfigurator.setMaxFileSize(1024 * 1024); // Set the maximum log file size to 1MB
-                logConfigurator.setMaxBackupSize(5); // Set the number of backup files to keep
+                logConfigurator.setMaxFileSize(1024 * 1024); // Set max log file size of 1MB
+                logConfigurator.setMaxBackupSize(5); // Set # of backup files to keep
                 logConfigurator.setUseLogCatAppender(true); // Ensure Logcat appender is enabled
                 logConfigurator.configure();
 
