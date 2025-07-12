@@ -1,4 +1,16 @@
 # Work Status (Android App)
+
+**THIS REPO HAS BEEN RENAMED AND DEPRECATED**
+
+I discovered that the free app "Fully Kiosk Browser" (FKB) will do this for me. However, this app suffers the same problem I had with this one- Android kills the app every couple of days to upgrade the webview component. This cannot be prevented. My workaround was to
+- Root the phone
+- Install Termux and cronie
+- Schedule a cron job to run a bash script that starts FKB if it is not running.
+So I recreated the repo named `work-status-android` ([link](https://github.com/brianekummer/work-status-android)) with the scripts that I am using to do that.
+
+
+## THE OLD DEPRECATED READ ME
+
 This is the simple Android app that I install on the Android phone mounted on a wall outside my home office and on the Android phone that sits on my office desk, which show my Slack status.
 My repo [`work-status-server`](https://github.com/brianekummer/work-status-server) contains the Node Express app that runs on a server and serves a simple web page to each of those phones.  
 
